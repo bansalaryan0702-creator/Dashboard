@@ -7,6 +7,7 @@ import { createServer as createViteServer } from "vite";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import multer from "multer";
 import ExcelJS from "exceljs";
+import { v2 as cloudinary } from "cloudinary";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 // Lazy S3 client initialization
@@ -15,6 +16,15 @@ let s3Client: S3Client | null = null;
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
 const GDRIVE_SCRIPT_URL = process.env.GOOGLE_DRIVE_SCRIPT_URL || "";
+
+// Configure Cloudinary if credentials exist
+if (process.env.CLOUDINARY_CLOUD_NAME) {
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+}
 
 function getS3FileUrl(bucketName: string, key: string): string {
   const endpoint = process.env.S3_ENDPOINT;
@@ -226,7 +236,7 @@ async function startServer() {
     res.sendFile(filePath);
   });
 
-  // File Upload endpoint (Google Drive → S3 → Local fallback)
+  // File Upload endpoint (Cloudinary → Google Drive → S3 → Local)
   app.post("/api/upload-s3", async (req, res) => {
     try {
       const { fileName, fileType, base64Data } = req.body;
@@ -235,7 +245,20 @@ async function startServer() {
         return res.status(400).json({ error: "fileName, fileType, and base64Data are required" });
       }
 
-      // Priority 1: Google Drive via Apps Script
+      // Priority 1: Cloudinary (free 25GB)
+      if (process.env.CLOUDINARY_CLOUD_NAME) {
+        try {
+          const result = await cloudinary.uploader.upload(
+            `data:${fileType};base64,${base64Data}`,
+            { folder: "dashboard", public_id: `${Date.now()}-${fileName}` }
+          );
+          return res.json({ success: true, url: result.secure_url });
+        } catch (cloudErr: any) {
+          console.error("Cloudinary upload failed, trying next option:", cloudErr.message);
+        }
+      }
+
+      // Priority 2: Google Drive via Apps Script
       if (GDRIVE_SCRIPT_URL) {
         try {
           const response = await fetch(GDRIVE_SCRIPT_URL, {
@@ -252,7 +275,7 @@ async function startServer() {
         }
       }
 
-      // Priority 2: S3 / Cloudflare R2
+      // Priority 3: S3 / Cloudflare R2
       const bucketName = process.env.AWS_S3_BUCKET_NAME;
       if (bucketName && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
         const client = getS3Client();
@@ -269,7 +292,7 @@ async function startServer() {
         return res.json({ success: true, url: fileUrl });
       }
 
-      // Priority 3: Local filesystem
+      // Priority 4: Local filesystem
       const uploadsDir = path.join(process.cwd(), "uploads");
       if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
       const buffer = Buffer.from(base64Data, "base64");
