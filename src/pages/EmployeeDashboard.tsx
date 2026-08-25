@@ -740,7 +740,8 @@ export default function EmployeeDashboard() {
                             required
                             min="1"
                             value={item.quantity}
-                            onChange={(e) => updateItem(item.id, 'quantity', e.target.value)}
+                            onChange={(e) => updateItem(item.id, 'quantity', e.target.valueAsNumber || 1)}
+                            onFocus={(e) => e.target.select()}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
                         </div>
@@ -755,7 +756,8 @@ export default function EmployeeDashboard() {
                               min="0"
                               step="0.01"
                               value={item.price}
-                              onChange={(e) => updateItem(item.id, 'price', e.target.value)}
+                              onChange={(e) => updateItem(item.id, 'price', e.target.valueAsNumber || 0)}
+                              onFocus={(e) => e.target.select()}
                               className="w-full pl-6 pr-3 py-2 border border-gray-300 rounded-lg font-mono text-center focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
                             />
                           </div>
@@ -1290,7 +1292,8 @@ export default function EmployeeDashboard() {
                                 <input
                                   type="number"
                                   value={item.price}
-                                  onChange={(e) => updateCartItemPrice(item.id, parseFloat(e.target.value) || 0)}
+                                  onChange={(e) => updateCartItemPrice(item.id, e.target.valueAsNumber || 0)}
+                                  onFocus={(e) => e.target.select()}
                                   className="w-full bg-blue-50/50 border border-blue-200 rounded-md px-2 pl-6 py-1.5 text-sm font-semibold text-blue-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-colors"
                                 />
                               </div>
