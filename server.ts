@@ -207,6 +207,14 @@ async function readDB(): Promise<any> {
   if (!data.catalogueItems) data.catalogueItems = [];
   if (!data.categories) data.categories = [];
 
+  // Migrate from old local-db.json format (metadata.lists → top-level)
+  if (data.metadata && data.metadata.lists) {
+    const lists = data.metadata.lists;
+    if (Array.isArray(lists.products) && lists.products.length > 0 && data.products.length === 0) data.products = lists.products;
+    if (Array.isArray(lists.customers) && lists.customers.length > 0 && data.customers.length === 0) data.customers = lists.customers;
+    if (Array.isArray(lists.vendors) && lists.vendors.length > 0 && data.vendors.length === 0) data.vendors = lists.vendors;
+  }
+
   return data;
 }
 

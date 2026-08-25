@@ -7,9 +7,9 @@
       "role": "admin"
     },
     {
-      "id": "e7eee468-ec43-49ad-998e-9542b9e7fd60",
-      "username": "TestUser",
-      "password": "Test@123",
+      "id": "3f21f9e9-0303-4643-b3f2-75e967846130",
+      "username": "Aryan",
+      "password": "Aryan@123",
       "role": "employee"
     }
   ],
@@ -112,7 +112,9 @@
     "Banners"
   ],
   "products": [],
-  "customers": [],
+  "customers": [
+    "Printfield Digital Solutions"
+  ],
   "vendors": [],
   "catalogueItems": []
 }
