@@ -29,7 +29,7 @@ export default function PrintFieldLogo({
   return (
     <div className={`flex items-center justify-center ${className}`}>
       <img
-        src="/api/proxy-image?url=https%3A%2F%2Fprintfielddigital.s3.ap-south-1.amazonaws.com%2Fassets%2Flogo.png"
+        src="/logo.png"
         alt="PrintField Logo"
         className={`${selectedSizeClass} w-auto object-contain flex-shrink-0 ${filterClass}`}
       />

@@ -10,7 +10,7 @@ export async function downloadTicketPdf(ticket: any) {
 
   try {
     const img = new Image();
-    img.src = '/api/proxy-image?url=https%3A%2F%2Fprintfielddigital.s3.ap-south-1.amazonaws.com%2Fassets%2Flogo.png';
+    img.src = '/logo.png';
     await new Promise((resolve, reject) => {
       img.onload = resolve;
       img.onerror = reject;
@@ -204,7 +204,7 @@ export async function downloadCartPdf(cartItems: any[], user: any, showBrandName
   };
 
   try {
-    const logoPromise = loadImage('/api/proxy-image?url=https%3A%2F%2Fprintfielddigital.s3.ap-south-1.amazonaws.com%2Fassets%2Flogo.png').then(img => { logoImg = img; }).catch(() => {});
+    const logoPromise = loadImage('/logo.png').then(img => { logoImg = img; }).catch(() => {});
     const coverPromise = loadImage(COVER_BASE64).then(img => { coverImg = img; }).catch(() => {});
     const lastPagePromise = loadImage(LAST_PAGE_BASE64).then(img => { lastPageImg = img; }).catch(() => {});
 
