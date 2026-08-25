@@ -382,6 +382,9 @@ export default function EmployeeDashboard() {
   const updateItem = (id: string, field: keyof OrderItem, value: any) => {
     setItems(items.map(item => {
       if (item.id === id) {
+        if (field === 'quantity' || field === 'price' || field === 'gstRate') {
+          value = value === '' ? '' : Number(value);
+        }
         let updated = { ...item, [field]: value };
         if (field === 'productName') {
           const match = catalogueItems.find(c => String(c.name || '').toLowerCase() === value.trim().toLowerCase());
