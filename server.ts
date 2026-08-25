@@ -15,23 +15,36 @@ let s3Client: S3Client | null = null;
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
 
+function getS3FileUrl(bucketName: string, key: string): string {
+  const endpoint = process.env.S3_ENDPOINT;
+  const publicUrl = process.env.S3_PUBLIC_URL;
+  if (publicUrl) return `${publicUrl}/${key}`;
+  if (endpoint) return `${endpoint}/${bucketName}/${key}`;
+  const region = process.env.AWS_REGION || "us-east-1";
+  return `https://${bucketName}.s3.${region}.amazonaws.com/${key}`;
+}
+
 function getS3Client() {
   if (!s3Client) {
     const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
     const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
     const region = process.env.AWS_REGION || "us-east-1";
+    const endpoint = process.env.S3_ENDPOINT || undefined;
 
     if (!accessKeyId || !secretAccessKey) {
       throw new Error("AWS credentials (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY) are missing in environment variables.");
     }
 
-    s3Client = new S3Client({
+    const config: any = {
       region,
-      credentials: {
-        accessKeyId,
-        secretAccessKey
-      }
-    });
+      credentials: { accessKeyId, secretAccessKey }
+    };
+    if (endpoint) {
+      config.endpoint = endpoint;
+      config.forcePathStyle = true;
+    }
+
+    s3Client = new S3Client(config);
   }
   return s3Client;
 }
@@ -205,6 +218,13 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  // Serve locally stored files
+  app.get("/api/local-file/:filename", (req, res) => {
+    const filePath = path.join(process.cwd(), "uploads", req.params.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).send("File not found");
+    res.sendFile(filePath);
+  });
+
   // AWS S3 File Upload endpoint
   app.post("/api/upload-s3", async (req, res) => {
     try {
@@ -216,9 +236,15 @@ async function startServer() {
 
       const bucketName = process.env.AWS_S3_BUCKET_NAME;
       if (!bucketName || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
-        // Fallback: return data URI so image upload works without AWS S3 setup
-        const dataUri = `data:${fileType};base64,${base64Data}`;
-        return res.json({ success: true, url: dataUri });
+        // Local filesystem fallback
+        const uploadsDir = path.join(process.cwd(), "uploads");
+        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+        const buffer = Buffer.from(base64Data, "base64");
+        const uniqueFileName = `${uuidv4()}-${fileName}`;
+        const filePath = path.join(uploadsDir, uniqueFileName);
+        fs.writeFileSync(filePath, buffer);
+        const fileUrl = `/api/local-file/${uniqueFileName}`;
+        return res.json({ success: true, url: fileUrl });
       }
 
       const client = getS3Client();
@@ -241,7 +267,7 @@ async function startServer() {
       console.log("Upload successful");
 
       const region = process.env.AWS_REGION || "us-east-1";
-      const fileUrl = `https://${bucketName}.s3.${region}.amazonaws.com/catalog/${uniqueFileName}`;
+      const fileUrl = getS3FileUrl(bucketName, `catalog/${uniqueFileName}`);
 
       res.json({ success: true, url: fileUrl });
     } catch (error: any) {
@@ -1013,7 +1039,7 @@ const getCellText = (row, index) => {
                });
                try {
                  await s3Client.send(command);
-                 imageUrl = `https://${bucketName}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com/${key}`;
+                  imageUrl = getS3FileUrl(bucketName, key);
                } catch (err) {
                  console.error("S3 upload failed for excel image, falling back to base64:", err.message);
                  imageUrl = `data:image/${ext};base64,${imgMedia.buffer.toString('base64')}`;
