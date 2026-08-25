@@ -1,0 +1,19 @@
+{
+  "users": {
+    "admin": {
+      "id": "admin",
+      "username": "admin",
+      "password": "password123",
+      "role": "admin"
+    }
+  },
+  "tickets": {},
+  "metadata": {
+    "lists": {
+      "products": [],
+      "customers": [],
+      "vendors": []
+    }
+  },
+  "catalogue_items": {}
+}
