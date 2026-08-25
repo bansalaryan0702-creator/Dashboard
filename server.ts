@@ -14,6 +14,7 @@ let s3Client: S3Client | null = null;
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3.2";
+const GDRIVE_SCRIPT_URL = process.env.GOOGLE_DRIVE_SCRIPT_URL || "";
 
 function getS3FileUrl(bucketName: string, key: string): string {
   const endpoint = process.env.S3_ENDPOINT;
@@ -225,7 +226,7 @@ async function startServer() {
     res.sendFile(filePath);
   });
 
-  // AWS S3 File Upload endpoint
+  // File Upload endpoint (Google Drive → S3 → Local fallback)
   app.post("/api/upload-s3", async (req, res) => {
     try {
       const { fileName, fileType, base64Data } = req.body;
@@ -234,45 +235,51 @@ async function startServer() {
         return res.status(400).json({ error: "fileName, fileType, and base64Data are required" });
       }
 
+      // Priority 1: Google Drive via Apps Script
+      if (GDRIVE_SCRIPT_URL) {
+        try {
+          const response = await fetch(GDRIVE_SCRIPT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: JSON.stringify({ fileName, fileData: base64Data, mimeType: fileType })
+          });
+          const result = await response.json();
+          if (result.success && result.url) {
+            return res.json({ success: true, url: result.url });
+          }
+        } catch (gdriveErr: any) {
+          console.error("Google Drive upload failed, trying next option:", gdriveErr.message);
+        }
+      }
+
+      // Priority 2: S3 / Cloudflare R2
       const bucketName = process.env.AWS_S3_BUCKET_NAME;
-      if (!bucketName || !process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
-        // Local filesystem fallback
-        const uploadsDir = path.join(process.cwd(), "uploads");
-        if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+      if (bucketName && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+        const client = getS3Client();
         const buffer = Buffer.from(base64Data, "base64");
         const uniqueFileName = `${uuidv4()}-${fileName}`;
-        const filePath = path.join(uploadsDir, uniqueFileName);
-        fs.writeFileSync(filePath, buffer);
-        const fileUrl = `/api/local-file/${uniqueFileName}`;
+        const command = new PutObjectCommand({
+          Bucket: bucketName,
+          Key: `catalog/${uniqueFileName}`,
+          Body: buffer,
+          ContentType: fileType,
+        });
+        await client.send(command);
+        const fileUrl = getS3FileUrl(bucketName, `catalog/${uniqueFileName}`);
         return res.json({ success: true, url: fileUrl });
       }
 
-      const client = getS3Client();
-
-      // Decode base64 file string to Buffer
-      console.log("Decoding base64 data for file:", fileName);
+      // Priority 3: Local filesystem
+      const uploadsDir = path.join(process.cwd(), "uploads");
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
       const buffer = Buffer.from(base64Data, "base64");
-      console.log("Buffer created, size:", buffer.length);
       const uniqueFileName = `${uuidv4()}-${fileName}`;
-
-      const command = new PutObjectCommand({
-        Bucket: bucketName,
-        Key: `catalog/${uniqueFileName}`,
-        Body: buffer,
-        ContentType: fileType,
-      });
-
-      console.log("Uploading to S3:", command.input.Key);
-      await client.send(command);
-      console.log("Upload successful");
-
-      const region = process.env.AWS_REGION || "us-east-1";
-      const fileUrl = getS3FileUrl(bucketName, `catalog/${uniqueFileName}`);
-
-      res.json({ success: true, url: fileUrl });
+      const filePath = path.join(uploadsDir, uniqueFileName);
+      fs.writeFileSync(filePath, buffer);
+      return res.json({ success: true, url: `/api/local-file/${uniqueFileName}` });
     } catch (error: any) {
-      console.error("S3 upload error:", error);
-      res.status(500).json({ error: error.message || "Failed to upload file to S3" });
+      console.error("File upload error:", error);
+      res.status(500).json({ error: error.message || "Failed to upload file" });
     }
   });
 
