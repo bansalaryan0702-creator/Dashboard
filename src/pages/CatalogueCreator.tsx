@@ -3,7 +3,6 @@ import { useAuth } from '../context/AuthContext';
 import { LogOut, Search, Edit, Trash2, Plus, Image, Box, Tag, IndianRupee, X, Upload, Loader2, Sparkles, FileDown, ShoppingCart, CheckCircle2 } from 'lucide-react';
 import { downloadCartPdf } from '../utils/generatePdf';
 import PrintFieldLogo from '../components/PrintFieldLogo';
-import ExcelJS from 'exceljs';
 import { v4 as uuidv4 } from 'uuid';
 
 type CatalogueItem = {
@@ -31,9 +30,6 @@ export default function CatalogueCreator({ isEmbedded = false }: CatalogueCreato
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<CatalogueItem | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-
-  const [showSheetsModal, setShowSheetsModal] = useState(false);
-  const [sheetsUrl, setSheetsUrl] = useState("");
 
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isGeneratingDesc, setIsGeneratingDesc] = useState(false);
@@ -282,111 +278,6 @@ export default function CatalogueCreator({ isEmbedded = false }: CatalogueCreato
   };
 
   
-  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    try {
-      alert("Reading and parsing Excel file in browser... This avoids size limits and ignores images.");
-      const arrayBuffer = await file.arrayBuffer();
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(arrayBuffer);
-      const worksheet = workbook.worksheets[0];
-      if (!worksheet) {
-        alert("No worksheets found");
-        return;
-      }
-
-      const items: CatalogueItem[] = [];
-      worksheet.eachRow((row, rowNumber) => {
-        if (rowNumber === 1) return; // skip header
-        const brandName = row.getCell(1).text || "";
-        const name = row.getCell(2).text || "";
-        if (!name) return;
-        const description = row.getCell(3).text || "";
-        const priceStr = row.getCell(4).text || "0";
-        const category = row.getCell(5).text || "Uncategorized";
-        const sizesStr = row.getCell(6).text || "";
-        
-        let sizes: string[] | undefined = sizesStr.split(',').map(s => s.trim()).filter(Boolean);
-        if (sizes.length === 0) sizes = undefined;
-        
-        items.push({
-          id: uuidv4(),
-          brandName,
-          name,
-          description,
-          price: parseFloat(priceStr.replace(/[^0-9.]/g, '')) || 0,
-          category,
-          sizes,
-          imageUrl: "" // Images removed as per request
-        });
-      });
-
-      if (items.length === 0) {
-        alert("No items found in the Excel file.");
-        return;
-      }
-
-      // Chunk items if there are too many, though 30MB excel without images is probably just a few thousand rows (small JSON)
-      const chunkSize = 1000;
-      let totalImported = 0;
-      for (let i = 0; i < items.length; i += chunkSize) {
-        const chunk = items.slice(i, i + chunkSize);
-        const response = await fetch('/api/catalogue/bulk-import-json', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: chunk })
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          totalImported += data.count;
-        } else {
-          const errText = await response.text();
-          alert("Upload failed on chunk: " + errText);
-          break;
-        }
-      }
-      
-      alert(`Successfully imported ${totalImported} items (images ignored)!`);
-      // reload items
-      fetch('/api/catalogue-items').then(r => r.json()).then(d => { setItems(d); localStorage.setItem('catalogue_items', JSON.stringify(d)); });
-      
-    } catch (error: any) {
-      console.error('Upload failed:', error);
-      alert("Upload failed: " + error.message);
-    }
-  };
-
-  
-  const handleSheetsImport = async () => {
-    if (!sheetsUrl) return;
-    
-    try {
-      setIsUploading(true);
-      setUploadError(null);
-      const response = await fetch('/api/catalogue/import-sheets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: sheetsUrl })
-      });
-      
-      const data = await response.json();
-      if (response.ok) {
-        console.log(`Successfully imported ${data.count} items!`);
-        setShowSheetsModal(false);
-        setSheetsUrl("");
-        fetch('/api/catalogue-items').then(r => r.json()).then(d => { setItems(d); localStorage.setItem('catalogue_items', JSON.stringify(d)); });
-      } else {
-        setUploadError("Import failed: " + (data.error || "Unknown error"));
-      }
-    } catch (error: any) {
-      setUploadError("Import failed: " + error.message);
-    } finally {
-      setIsUploading(false);
-    }
-  };
 
   const handleBulkImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -580,36 +471,12 @@ export default function CatalogueCreator({ isEmbedded = false }: CatalogueCreato
               Export PDF {cart.length > 0 && <span className="bg-emerald-800 text-xs px-2 py-0.5 rounded-full">{cart.length}</span>}
             </button>
             
-            <input 
-              type="file" 
-              accept=".xlsx, .xls" 
-              className="hidden" 
-              id="excel-upload"
-              onChange={handleExcelUpload} 
-            />
-            <label 
-              htmlFor="excel-upload"
-              className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <Upload className="w-4 h-4" />
-              Upload Excel
-            </label>
-
             <button 
               onClick={() => openModal()}
               className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap"
             >
               <Plus className="w-4 h-4" />
               Add Item
-            </button>
-            
-            <button 
-              onClick={() => setShowSheetsModal(true)}
-              disabled={isUploading}
-              className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors whitespace-nowrap disabled:bg-green-400"
-            >
-              <Upload className="w-4 h-4" />
-              Import Google Sheet
             </button>
             <input 
               type="file" 
@@ -685,56 +552,6 @@ export default function CatalogueCreator({ isEmbedded = false }: CatalogueCreato
         </div>
 
         
-      {showSheetsModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-md w-full p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold">Import from Google Sheets</h2>
-              <button onClick={() => setShowSheetsModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Google Sheets Link
-                </label>
-                <input
-                  type="url"
-                  value={sheetsUrl}
-                  onChange={(e) => setSheetsUrl(e.target.value)}
-                  placeholder="https://docs.google.com/spreadsheets/d/..."
-                  className="w-full border-slate-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2 border"
-                />
-                <p className="text-xs text-slate-500 mt-2">
-                  Make sure the sheet sharing is set to "Anyone with the link can view".
-                </p>
-                {uploadError && <p className="text-sm text-red-600 mt-2">{uploadError}</p>}
-              </div>
-              
-              <div className="flex justify-end gap-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowSheetsModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50"
-                  disabled={isUploading}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSheetsImport}
-                  disabled={!sheetsUrl || isUploading}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-md hover:bg-green-700 disabled:bg-green-400"
-                >
-                  {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  {isUploading ? 'Importing...' : 'Import'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col shadow-xl">
@@ -1080,21 +897,6 @@ export default function CatalogueCreator({ isEmbedded = false }: CatalogueCreato
               Export PDF {cart.length > 0 && <span className="bg-emerald-800 text-xs px-2 py-0.5 rounded-full">{cart.length}</span>}
             </button>
             
-            <input 
-              type="file" 
-              accept=".xlsx, .xls" 
-              className="hidden" 
-              id="excel-upload"
-              onChange={handleExcelUpload} 
-            />
-            <label 
-              htmlFor="excel-upload"
-              className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-md hover:bg-purple-700 transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <Upload className="w-4 h-4" />
-              Upload Excel
-            </label>
-
             <button 
               onClick={() => openModal()}
               className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors whitespace-nowrap"

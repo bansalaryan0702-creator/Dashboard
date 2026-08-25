@@ -94,5 +94,15 @@
       "vendors": []
     }
   },
-  "catalogue_items": {}
+  "catalogue_items": {},
+  "categories": [
+    "Mugs",
+    "T-Shirts",
+    "Notebooks",
+    "Water Bottles",
+    "Business Cards",
+    "Flyers",
+    "Posters",
+    "Banners"
+  ]
 }
