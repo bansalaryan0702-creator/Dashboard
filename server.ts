@@ -156,37 +156,58 @@ const LOCAL_DB_PATH = path.join(process.cwd(), "local-db.json");
 
 // Read DB from local file (primary) or Cloudinary backup
 async function readDB(): Promise<any> {
+  let data: any = null;
+
   // Try local file first
   try {
     if (fs.existsSync(LOCAL_DB_PATH)) {
-      const data = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
-      if (data.users && Object.keys(data.users).length > 0) return data;
+      data = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
     }
   } catch (e) {
     console.error("Failed to read local DB:", e);
   }
 
-  // Try Cloudinary backup
-  if (process.env.CLOUDINARY_CLOUD_NAME) {
+  // Try Cloudinary backup if local is empty
+  if (!data && process.env.CLOUDINARY_CLOUD_NAME) {
     try {
       const result = await cloudinary.search.expression("folder:db-backup AND filename:db.json").execute();
       if (result.resources && result.resources.length > 0) {
         const resource = result.resources[0];
         const response = await fetch(resource.secure_url);
         const text = await response.text();
-        const data = JSON.parse(text);
+        data = JSON.parse(text);
         console.log("Restored database from Cloudinary backup");
-        // Save locally for future reads
         fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(data, null, 2));
-        return data;
       }
     } catch (e) {
       console.error("Failed to restore from Cloudinary:", e);
     }
   }
 
-  // Return default DB
-  return DEFAULT_DB;
+  // Fall back to default
+  if (!data) data = DEFAULT_DB;
+
+  // Normalize: convert objects to arrays where needed
+  if (data.users && !Array.isArray(data.users)) {
+    data.users = Object.values(data.users);
+  }
+  if (data.tickets && !Array.isArray(data.tickets)) {
+    data.tickets = Object.values(data.tickets);
+  }
+  if (data.catalogueItems && !Array.isArray(data.catalogueItems)) {
+    data.catalogueItems = Object.values(data.catalogueItems);
+  }
+
+  // Ensure all fields exist
+  if (!data.users) data.users = [];
+  if (!data.tickets) data.tickets = [];
+  if (!data.products) data.products = [];
+  if (!data.customers) data.customers = [];
+  if (!data.vendors) data.vendors = [];
+  if (!data.catalogueItems) data.catalogueItems = [];
+  if (!data.categories) data.categories = [];
+
+  return data;
 }
 
 // Write DB to local file AND backup to Cloudinary

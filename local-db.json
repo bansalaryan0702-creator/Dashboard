@@ -1,13 +1,19 @@
 {
-  "users": {
-    "admin": {
+  "users": [
+    {
       "id": "admin",
       "username": "admin",
       "password": "password123",
       "role": "admin"
+    },
+    {
+      "id": "e7eee468-ec43-49ad-998e-9542b9e7fd60",
+      "username": "TestUser",
+      "password": "Test@123",
+      "role": "employee"
     }
-  },
-  "tickets": {},
+  ],
+  "tickets": [],
   "metadata": {
     "lists": {
       "products": [
@@ -104,5 +110,9 @@
     "Flyers",
     "Posters",
     "Banners"
-  ]
+  ],
+  "products": [],
+  "customers": [],
+  "vendors": [],
+  "catalogueItems": []
 }
