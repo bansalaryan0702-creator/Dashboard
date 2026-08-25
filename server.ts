@@ -60,8 +60,6 @@ function getS3Client() {
   return s3Client;
 }
 
-const dbKey = "database/db.json";
-
 // Default DB state with fallback to original real-world values from the website
 const DEFAULT_DB: any = {
   users: [
@@ -154,66 +152,66 @@ try {
   console.error("Failed to dynamically seed from local-db.json:", e);
 }
 
-// Helper to read DB from S3
-async function readDB() {
-  const bucketName = process.env.AWS_S3_BUCKET_NAME;
-  if (!bucketName) {
-    console.warn("AWS_S3_BUCKET_NAME is not configured. Falling back to local DEFAULT_DB.");
-    return DEFAULT_DB;
+// Local DB file path
+const LOCAL_DB_PATH = path.join(process.cwd(), "local-db.json");
+
+// Read DB from local file (primary) or Cloudinary backup
+async function readDB(): Promise<any> {
+  // Try local file first
+  try {
+    if (fs.existsSync(LOCAL_DB_PATH)) {
+      const data = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, "utf8"));
+      if (data.users && Object.keys(data.users).length > 0) return data;
+    }
+  } catch (e) {
+    console.error("Failed to read local DB:", e);
   }
 
-  try {
-    const client = getS3Client();
-    const command = new GetObjectCommand({
-      Bucket: bucketName,
-      Key: dbKey,
-    });
-    const response = await client.send(command);
-    if (response.Body) {
-      const dataStr = await response.Body.transformToString("utf-8");
-      const parsedData = JSON.parse(dataStr);
-      
-      if (!parsedData.users) parsedData.users = DEFAULT_DB.users;
-      if (!parsedData.tickets) parsedData.tickets = [];
-      if (!parsedData.products) parsedData.products = DEFAULT_DB.products;
-      if (!parsedData.customers) parsedData.customers = DEFAULT_DB.customers;
-      if (!parsedData.vendors) parsedData.vendors = DEFAULT_DB.vendors;
-      if (!parsedData.catalogueItems) parsedData.catalogueItems = [];
-      if (!parsedData.categories) parsedData.categories = DEFAULT_DB.categories || [];
-      
-      return parsedData;
+  // Try Cloudinary backup
+  if (process.env.CLOUDINARY_CLOUD_NAME) {
+    try {
+      const result = await cloudinary.search.expression("folder:db-backup AND filename:db.json").execute();
+      if (result.resources && result.resources.length > 0) {
+        const resource = result.resources[0];
+        const response = await fetch(resource.secure_url);
+        const text = await response.text();
+        const data = JSON.parse(text);
+        console.log("Restored database from Cloudinary backup");
+        // Save locally for future reads
+        fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(data, null, 2));
+        return data;
+      }
+    } catch (e) {
+      console.error("Failed to restore from Cloudinary:", e);
     }
-  } catch (error: any) {
-    if (error.name === "NoSuchKey") {
-      console.log("Database file db.json not found on S3. Creating new one with initial data...");
-      await writeDB(DEFAULT_DB);
-      return DEFAULT_DB;
-    }
-    console.error("S3 read error, falling back to DEFAULT_DB:", error);
   }
+
+  // Return default DB
   return DEFAULT_DB;
 }
 
-// Helper to write DB to S3
+// Write DB to local file AND backup to Cloudinary
 async function writeDB(data: any) {
-  const bucketName = process.env.AWS_S3_BUCKET_NAME;
-  if (!bucketName) {
-    console.warn("AWS_S3_BUCKET_NAME not configured. Cannot write to S3.");
-    return;
-  }
+  // Save locally
+  fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(data, null, 2));
 
-  try {
-    const client = getS3Client();
-    const command = new PutObjectCommand({
-      Bucket: bucketName,
-      Key: dbKey,
-      Body: JSON.stringify(data, null, 2),
-      ContentType: "application/json",
-    });
-    await client.send(command);
-    console.log("Database written successfully to S3!");
-  } catch (error) {
-    console.error("S3 write error:", error);
+  // Backup to Cloudinary
+  if (process.env.CLOUDINARY_CLOUD_NAME) {
+    try {
+      const jsonStr = JSON.stringify(data, null, 2);
+      const result = await cloudinary.uploader.upload(
+        `data:application/json;base64,${Buffer.from(jsonStr).toString("base64")}`,
+        {
+          folder: "db-backup",
+          public_id: "db",
+          resource_type: "raw",
+          overwrite: true,
+        }
+      );
+      console.log("Database backed up to Cloudinary:", result.secure_url);
+    } catch (e: any) {
+      console.error("Cloudinary backup failed:", e.message);
+    }
   }
 }
 
